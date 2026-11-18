@@ -1,4 +1,5 @@
 .env
+uv.lock.security-backup
 __pycache__/
 *.pyc
 .venv

@@ -1,6 +1,8 @@
-import streamlit as st
-from chatbot_ui.core.config import config
 import requests
+import streamlit as st
+
+from chatbot_ui.core.config import config
+
 
 def api_call(method, url, **kwargs):
 
@@ -35,13 +37,13 @@ def api_call(method, url, **kwargs):
         return False, {"message": str(e)}
 
 with st.sidebar:
-    provider = st.selectbox("Provider", ["OpenAI", "Groq", "Google"])
+    provider = st.selectbox("Provider", ["OpenAI", "Anthropic", "Google"])
     if provider == "OpenAI":
-        model_name = st.selectbox("Model", ["gpt-5-nano", "gpt-5-mini"])
-    elif provider == "Groq":
-        model_name = st.selectbox("Model", ["llama-3.3-70b-versatile"])
+        model_name = st.selectbox("Model", ["gpt-6-luna", "gpt-6-sol"])
+    elif provider == "Anthropic":
+        model_name = st.selectbox("Model", ["claude-haiku-5-5", "claude-sonnet-5-5"])
     elif provider == "Google":
-        model_name = st.selectbox("Model", ["gemini-2.5-flash"])
+        model_name = st.selectbox("Model", ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-4-hydrogen"])
     else:
         raise ValueError(f"Invalid provider: {provider}")
     
@@ -63,9 +65,18 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        output = api_call("post", f"{config.API_URL}/chat", json={"provider": st.session_state.provider, "models_name": st.session_state.model_name, "messages": st.session_state.messages})
-        response_data = output[1]
-        answer = response_data["message"]
-        st.write(answer)
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+        # skip the canned greeting so every request starts with a user turn
+        history = st.session_state.messages[1:]
+        ok, response_data = api_call("post", f"{config.API_URL}/chat", json={"provider": st.session_state.provider, "models_name": st.session_state.model_name, "messages": history})
+        if ok:
+            answer = response_data["message"]
+            st.write(answer)
+        else:
+            # FastAPI errors use "detail"; api_call's own errors use "message"
+            st.write(response_data.get("detail") or response_data.get("message") or "Request failed")
+    if ok:
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+    else:
+        # drop the unanswered user turn so a retry doesn't send two user messages in a row
+        st.session_state.messages.pop()
     
