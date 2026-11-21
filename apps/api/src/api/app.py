@@ -15,8 +15,7 @@ from pydantic import BaseModel
 from api.core.config import config
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -27,9 +26,11 @@ Provider = Literal["OpenAI", "Anthropic", "Google"]
 def _openai() -> OpenAI:
     return OpenAI(api_key=config.OPENAI_API_KEY)
 
+
 @cache
 def _anthropic() -> Anthropic:
     return Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
 
 @cache
 def _gemini() -> genai.Client:
@@ -78,7 +79,9 @@ def _run_gemini(model: str, messages: list[dict], max_tokens: int) -> str:
             system_instruction=system or None,
             max_output_tokens=max_tokens,
             # thinking tokens count toward max_output_tokens
-            thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+            thinking_config=types.ThinkingConfig(
+                thinking_level=types.ThinkingLevel.LOW
+            ),
         ),
     )
     return resp.text or ""
@@ -91,22 +94,32 @@ _RUNNERS: dict[Provider, Callable[[str, list[dict], int], str]] = {
 }
 
 
-def run_llm(provider: Provider, model_name: str, messages: list[dict], max_tokens: int = 2000) -> str:
+def run_llm(
+    provider: Provider, model_name: str, messages: list[dict], max_tokens: int = 2000
+) -> str:
     try:
         runner = _RUNNERS[provider]
     except KeyError:
         raise ValueError(f"Unknown provider: {provider!r}") from None
-    logger.info("Calling %s model %s (messages=%d, max_tokens=%d)", provider, model_name, len(messages), max_tokens)
+    logger.info(
+        "Calling %s model %s (messages=%d, max_tokens=%d)",
+        provider,
+        model_name,
+        len(messages),
+        max_tokens,
+    )
     result = runner(model_name, messages, max_tokens)
     if not result.strip():
         # reasoning models can spend the whole token limit thinking
         raise ValueError(f"Empty response (max_tokens={max_tokens} may be too low)")
     return result
 
+
 class ChatRequest(BaseModel):
     provider: Provider
     models_name: str
     messages: list[dict]
+
 
 class ChatResponse(BaseModel):
     message: str
@@ -114,16 +127,18 @@ class ChatResponse(BaseModel):
 
 app = FastAPI()
 
+
 @app.post("/chat")
-def chat(
-    request: Request,
-    payload: ChatRequest
-) -> ChatResponse:
+def chat(request: Request, payload: ChatRequest) -> ChatResponse:
 
     try:
         result = run_llm(payload.provider, payload.models_name, payload.messages)
     except Exception as e:
-        logger.exception("LLM call failed: %s %s", payload.provider, payload.models_name)
-        raise HTTPException(status_code=502, detail=f"{payload.provider} request failed: {e}") from e
+        logger.exception(
+            "LLM call failed: %s %s", payload.provider, payload.models_name
+        )
+        raise HTTPException(
+            status_code=502, detail=f"{payload.provider} request failed: {e}"
+        ) from e
 
     return ChatResponse(message=result)

@@ -21,7 +21,9 @@ def api_call(method: str, url: str, **kwargs: Any) -> tuple[bool, dict[str, Any]
         return False, {"message": "The request timed out. Please try again later."}
     except requests.exceptions.ConnectionError:
         logger.exception("Connection error calling %s", url)
-        return False, {"message": "Connection error. Please check your network connection."}
+        return False, {
+            "message": "Connection error. Please check your network connection."
+        }
     except requests.exceptions.RequestException:
         logger.exception("Request failed calling %s", url)
         return False, {"message": "Failed to reach the server. Please try again."}
@@ -33,10 +35,13 @@ def api_call(method: str, url: str, **kwargs: Any) -> tuple[bool, dict[str, Any]
             return False, {"message": "Invalid response format from server"}
 
         if not response.ok:
-            logger.warning("API error (%s) from %s: %s", response.status_code, url, response_data)
+            logger.warning(
+                "API error (%s) from %s: %s", response.status_code, url, response_data
+            )
             return False, response_data
 
         return True, response_data
+
 
 with st.sidebar:
     provider = st.selectbox("Provider", ["OpenAI", "Anthropic", "Google"])
@@ -45,16 +50,20 @@ with st.sidebar:
     elif provider == "Anthropic":
         model_name = st.selectbox("Model", ["claude-haiku-5-5", "claude-sonnet-5-5"])
     elif provider == "Google":
-        model_name = st.selectbox("Model", ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-4-hydrogen"])
+        model_name = st.selectbox(
+            "Model", ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-4-hydrogen"]
+        )
     else:
         raise ValueError(f"Invalid provider: {provider}")
-    
+
     st.session_state.provider = provider
     st.session_state.model_name = model_name
 
 
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Hello! How can I assist you today?"}
+    ]
 
 
 for message in st.session_state.messages:
@@ -69,16 +78,27 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
     with st.chat_message("assistant"):
         # skip the canned greeting so every request starts with a user turn
         history = st.session_state.messages[1:]
-        ok, response_data = api_call("post", f"{config.API_URL}/chat", json={"provider": st.session_state.provider, "models_name": st.session_state.model_name, "messages": history})
+        ok, response_data = api_call(
+            "post",
+            f"{config.API_URL}/chat",
+            json={
+                "provider": st.session_state.provider,
+                "models_name": st.session_state.model_name,
+                "messages": history,
+            },
+        )
         if ok:
             answer = response_data["message"]
             st.write(answer)
         else:
             # FastAPI errors use "detail"; api_call's own errors use "message"
-            st.write(response_data.get("detail") or response_data.get("message") or "Request failed")
+            st.write(
+                response_data.get("detail")
+                or response_data.get("message")
+                or "Request failed"
+            )
     if ok:
         st.session_state.messages.append({"role": "assistant", "content": answer})
     else:
         # drop the unanswered user turn so a retry doesn't send two user messages in a row
         st.session_state.messages.pop()
-    
