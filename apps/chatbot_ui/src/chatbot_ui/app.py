@@ -1,40 +1,42 @@
+import logging
+from typing import Any
+
 import requests
 import streamlit as st
 
 from chatbot_ui.core.config import config
 
+logger = logging.getLogger(__name__)
 
-def api_call(method, url, **kwargs):
+DEFAULT_TIMEOUT = 60
 
-    def _show_error_popup(message):
-        """Show error message as a popup in the top-right corner."""
-        st.session_state["error_popup"] = {
-            "visible": True,
-            "message": message,
-        }
+
+def api_call(method: str, url: str, **kwargs: Any) -> tuple[bool, dict[str, Any]]:
+    kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
 
     try:
-        response = getattr(requests, method)(url, **kwargs)
-
+        response = requests.request(method, url, **kwargs)
+    except requests.exceptions.Timeout:
+        logger.warning("Request to %s timed out", url)
+        return False, {"message": "The request timed out. Please try again later."}
+    except requests.exceptions.ConnectionError:
+        logger.exception("Connection error calling %s", url)
+        return False, {"message": "Connection error. Please check your network connection."}
+    except requests.exceptions.RequestException:
+        logger.exception("Request failed calling %s", url)
+        return False, {"message": "Failed to reach the server. Please try again."}
+    else:
         try:
             response_data = response.json()
         except requests.exceptions.JSONDecodeError:
-            response_data = {"message": "Invalid response format from server"}
+            logger.warning("Non-JSON response (%s) from %s", response.status_code, url)
+            return False, {"message": "Invalid response format from server"}
 
-        if response.ok:
-            return True, response_data
+        if not response.ok:
+            logger.warning("API error (%s) from %s: %s", response.status_code, url, response_data)
+            return False, response_data
 
-        return False, response_data
-
-    except requests.exceptions.ConnectionError:
-        _show_error_popup("Connection error. Please check your network connection.")
-        return False, {"message": "Connection error"}
-    except requests.exceptions.Timeout:
-        _show_error_popup("The request timed out. Please try again later.")
-        return False, {"message": "Request timeout"}
-    except Exception as e:
-        _show_error_popup(f"An unexpected error occurred: {str(e)}")
-        return False, {"message": str(e)}
+        return True, response_data
 
 with st.sidebar:
     provider = st.selectbox("Provider", ["OpenAI", "Anthropic", "Google"])
