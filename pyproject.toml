@@ -28,6 +28,7 @@ members = [
 dev = [
     "duckdb>=2.0.1",
     "ipykernel>=7.3.0",
+    "langsmith>=0.16.2",
     "matplotlib>=3.11.2",
     "nbconvert>=7.17.1",
     "nbstripout>=0.9.2",
