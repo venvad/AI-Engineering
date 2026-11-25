@@ -9,3 +9,4 @@ __pycache__/
 .claude
 data/
 qdrant_data/
+pyrefly.toml
