@@ -50,9 +50,7 @@ with st.sidebar:
     elif provider == "Anthropic":
         model_name = st.selectbox("Model", ["claude-haiku-5-5", "claude-sonnet-5-5"])
     elif provider == "Google":
-        model_name = st.selectbox(
-            "Model", ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-4-hydrogen"]
-        )
+        model_name = st.selectbox("Model", ["gemini-4-hydrogen", "gemini-4-neon"])
     else:
         raise ValueError(f"Invalid provider: {provider}")
 
@@ -75,20 +73,22 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    answer = ""
     with st.chat_message("assistant"):
-        # skip the canned greeting so every request starts with a user turn
-        history = st.session_state.messages[1:]
+        # skip the canned greeting (index 0) and the current prompt (index -1)
+        history = st.session_state.messages[1:-1]
         ok, response_data = api_call(
             "post",
-            f"{config.API_URL}/chat",
+            f"{config.API_URL}/rag",
             json={
+                "query": prompt,
                 "provider": st.session_state.provider,
-                "models_name": st.session_state.model_name,
-                "messages": history,
+                "model_name": st.session_state.model_name,
+                "history": history,
             },
         )
         if ok:
-            answer = response_data["message"]
+            answer = response_data["answer"]
             st.write(answer)
         else:
             # FastAPI errors use "detail"; api_call's own errors use "message"
