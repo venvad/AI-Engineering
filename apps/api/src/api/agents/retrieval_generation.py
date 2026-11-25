@@ -1,10 +1,11 @@
+from collections.abc import Sequence
 from functools import cache
 
 from langsmith import get_current_run_tree, traceable
 from langsmith.wrappers import wrap_openai
 from openai import OpenAI
 from qdrant_client import QdrantClient
-from qdrant_client.conversions.common_types import QueryResponse
+from qdrant_client.http.models.models import QueryResponse
 
 from api.agents.agents import run_llm
 from api.agents.constants import (
@@ -15,6 +16,7 @@ from api.agents.constants import (
     LLM_TIMEOUT_SECONDS,
     MAX_HISTORY_MESSAGES,
     MAX_TOKENS,
+    QDRANT_TIMEOUT_SECONDS,
 )
 from api.api.models import ChatMessage, RAGResult, RetrievedItem
 from api.core.config import config
@@ -30,7 +32,7 @@ def _openai_client() -> OpenAI:
 
 @cache
 def _qdrant_client() -> QdrantClient:
-    return QdrantClient(url=config.QDRANT_URL)
+    return QdrantClient(url=config.QDRANT_URL, timeout=QDRANT_TIMEOUT_SECONDS)
 
 
 @traceable(
@@ -96,13 +98,11 @@ Rules:
 def build_prompt(
     formatted_products: str,
     question: str,
-    history: list[ChatMessage] | None = None,
+    history: Sequence[ChatMessage] = (),
 ) -> list[ChatMessage]:
-    recent_history = [m for m in (history or []) if m.role != Role.SYSTEM][
-        -MAX_HISTORY_MESSAGES:
-    ]
-    while recent_history and recent_history[0].role != Role.USER:
-        recent_history.pop(0)
+    # Anthropic requires conversations to start with a user turn (rejects leading assistant with 400)
+    if (recent := history[-MAX_HISTORY_MESSAGES:]) and recent[0].role != Role.USER:
+        recent = recent[1:]
 
     user_content = (
         f"<available_products>\n{formatted_products}\n</available_products>\n\n"
@@ -110,7 +110,7 @@ def build_prompt(
     )
     return [
         ChatMessage(role=Role.SYSTEM, content=SYSTEM_PROMPT),
-        *recent_history,
+        *recent,
         ChatMessage(role=Role.USER, content=user_content),
     ]
 
@@ -124,26 +124,14 @@ def generate_answer(
     return run_llm(provider, model_name, prompt, max_tokens=max_tokens)
 
 
-@traceable(
-    name="rag_pipeline",
-    process_inputs=lambda inputs: {"question": inputs["question"]},
-)
+@traceable(name="rag_pipeline")
 def rag_pipeline(
     question: str,
     provider: Provider = DEFAULT_PROVIDER,
     model_name: str = DEFAULT_MODEL_NAME,
     top_k: int = DEFAULT_TOP_K,
-    history: list[ChatMessage] | None = None,
+    history: Sequence[ChatMessage] = (),
 ) -> RAGResult:
-    if (current_run := get_current_run_tree()) is not None:
-        current_run.metadata.update(
-            {
-                "provider": str(provider),
-                "model_name": model_name,
-                "top_k": top_k,
-                "history_messages": len(history or []),
-            }
-        )
     retrieved_items = retrieve_items(question, k=top_k)
     formatted_context = format_context(retrieved_items)
     prompt = build_prompt(formatted_context, question, history=history)

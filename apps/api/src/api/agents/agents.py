@@ -11,7 +11,7 @@ from langsmith.wrappers import wrap_anthropic, wrap_gemini, wrap_openai
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from api.agents.constants import LLM_TIMEOUT_SECONDS
+from api.agents.constants import LLM_TIMEOUT_SECONDS, MAX_TOKENS
 from api.api.models import ChatMessage
 from api.core.config import config
 from api.core.types import Provider, Role
@@ -109,7 +109,7 @@ def run_llm(
     provider: Provider,
     model_name: str,
     messages: list[ChatMessage],
-    max_tokens: int = 2000,
+    max_tokens: int = MAX_TOKENS,
 ) -> str:
     logger.info(
         "Calling %s/%s (messages=%d, max_tokens=%d)",

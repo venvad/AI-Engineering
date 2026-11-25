@@ -41,13 +41,14 @@ Add a lightweight contextualization step before vector search whenever `history`
 - [ ] **Operational endpoints (root-level)**: Add `GET /health` (liveness) and `GET /ready` (verifies Qdrant connectivity) outside `/api/v1`.
 
 ### Router & Logging Structure
-- [ ] **Remove duplicate `logging.basicConfig()`** from `apps/api/src/api/api/endpoints.py` — configure logging once in `app.py` and keep only `logger = logging.getLogger(__name__)` in submodules.
+- [x] **Remove duplicate `logging.basicConfig()`** from `apps/api/src/api/api/endpoints.py` — configure logging once in `app.py` and keep only `logger = logging.getLogger(__name__)` in submodules.
 - [ ] **Split routers by domain** (once >1 feature exists): Move routes into `apps/api/src/api/api/routes/` (`rag.py`, `health.py`, etc.) aggregated by `api_router`.
 
 ### Input Validation (`apps/api/src/api/api/models.py`)
-- [ ] **Reject blank queries**: Add `min_length=1` and a whitespace-stripping validator on `RAGRequest.query` so empty requests return `422` before calling OpenAI/Qdrant.
+- [x] **Reject blank queries**: `RAGRequest` uses `ConfigDict(str_strip_whitespace=True)` + `min_length=1` on `query`; `HistoryMessage` only allows `user`/`assistant` roles, and `build_prompt` slices to the last `MAX_HISTORY_MESSAGES` (10).
 - [ ] **Optional bounded `top_k`**: Expose `top_k: int = Field(default=5, ge=1, le=50)` on `RAGRequest` if callers should control retrieval depth.
-- [ ] **Remove or fix unused schemas**: Clean up legacy `ChatRequest` (including `models_name` typo) / `ChatResponse` if no direct `/chat` endpoint is kept.
+- [x] **Remove unused schemas**: Removed legacy `ChatRequest` (with `models_name` typo) / `ChatResponse`.
+- [ ] **Validate `model_name` against `provider`**: Mismatched pairs (e.g. `Anthropic` + `gpt-6-luna`) currently pass validation and fail upstream as a `500`. Add a per-provider allow-list in the backend, validate it with a `model_validator`, and expose it via `GET /api/v1/models` so the Streamlit UI stops hardcoding model lists.
 
 ### Error Handling & Status Codes
 - [ ] **Map upstream errors accurately**: Return `504` on upstream timeouts (`APITimeoutError` / Qdrant timeout), `502` on upstream LLM/Qdrant errors, and `500` only for unexpected internal bugs.
@@ -55,14 +56,62 @@ Add a lightweight contextualization step before vector search whenever `history`
 - [ ] **Centralize exception handlers**: Register `@app.exception_handler(...)` on `app` instead of duplicating `try/except` in every route (and always re-raise `HTTPException` before catching `Exception`).
 
 ### Observability, Docs & Security
-- [ ] **Fix CORS spec violation** (`apps/api/src/api/app.py`): `allow_origins=["*"]` with `allow_credentials=True` is invalid per CORS — either set `allow_credentials=False` or list explicit origins (e.g., `["http://localhost:8501"]`).
+- [x] **Fix CORS spec violation** (`apps/api/src/api/app.py`): Set `allow_credentials=False` (previously `allow_origins=["*"]` + `allow_credentials=True` made Starlette reflect any `Origin` with credentials).
 - [ ] **Request ID / correlation middleware**: Generate a UUID per request, return it in an `X-Request-ID` response header, include it in logs/errors, and attach it to LangSmith run metadata.
 - [ ] **Enrich OpenAPI `/docs` metadata**: Add `summary`, `description`, `status_code`, and `responses={502: ..., 504: ...}` to route decorators.
 - [ ] **Async migration (future, if needed for concurrency)**: Only switch route handlers from `def` to `async def` alongside switching to `AsyncOpenAI`, `AsyncAnthropic`, and `AsyncQdrantClient`.
 
 ---
 
-## 3. Async Migration Notes (`def` vs `async def`)
+## 3. Code Quality & Architecture (from code review)
+
+### Retrieval & Prompting (`apps/api/src/api/agents/retrieval_generation.py`)
+- [ ] **Harden Qdrant payload parsing**: `retrieve_items` uses `p.payload["parent_asin"]` / `["preprocess_description"]`, so one malformed point raises `KeyError` and fails the request. Use `.get()` and skip + log incomplete points.
+- [ ] **Escape prompt XML**: Product descriptions and the user question are interpolated raw into `<product>` / `<user_question>` tags; escape with `xml.sax.saxutils.escape` / `quoteattr` and render missing ratings as `"N/A"` instead of `"None"`.
+- [ ] **Revisit history grounding rule**: `SYSTEM_PROMPT` now allows "products already referenced earlier in this conversation", so a hallucinated product from a prior turn can persist. Level 2 query rewriting (Section 1) mitigates this.
+
+### Layering & Duplication
+- [ ] **Move domain models to `api/core/schemas.py`**: `agents/` currently imports `ChatMessage`, `RetrievedItem`, `RAGResult` from the HTTP layer (`api/api/models.py`) — an inverted dependency one edit away from a circular import. Keep only request/response schemas in `api/api/models.py`.
+- [ ] **Single OpenAI client**: `agents._openai()` and `retrieval_generation._openai_client()` build identical wrapped clients; expose one getter and reuse it for embeddings.
+- [ ] **Provider-specific options**: `reasoning_effort="low"` is hardcoded in `_run_openai`; make it configurable per model so non-reasoning models don't fail.
+
+### Configuration (`apps/api/src/api/core/config.py`)
+- [ ] **Use `SecretStr` for API keys** (and `.get_secret_value()` at client construction) so keys never appear in reprs/logs.
+- [ ] **Make provider keys optional**: Currently all three keys are required even if only OpenAI is used; fail fast with a clear error only when an unconfigured provider is selected.
+- [ ] **Lazy config**: Replace import-time `config = Config()` with a cached `get_config()` so tests can import modules without real env vars.
+
+### Testing
+- [ ] **Add an automated test suite**: Add `pytest` + `httpx` to dev deps and cover `build_prompt` (history truncation / role filtering), `retrieve_items` (malformed payloads), and `POST /api/v1/rag` (200 / 422 / upstream errors) with Qdrant + LLM clients mocked.
+
+### Streamlit UI (`apps/chatbot_ui/src/chatbot_ui/app.py`)
+- [ ] **Loading feedback**: Wrap the API call in `st.spinner(...)` (calls take 3–15s).
+- [ ] **Remove unreachable branch**: `else: raise ValueError(...)` after the provider `selectbox` can never execute.
+- [ ] **User-friendly errors**: Don't render the backend's raw `detail` string to end users; show a generic message (pairs with the error-mapping item in Section 2).
+
+---
+
+## 4. Packaging, Docker & Tooling
+
+### Packaging (`pyproject.toml` files)
+- [ ] **Clean up workspace config**: Root project is named `"prerequisites"` and duplicates app dependencies; keep it for workspace + dev tooling only.
+- [ ] **Remove dead config**: Both apps declare `[tool.uv.sources] shared = { workspace = true }` (no such package); `chatbot_ui` uses `uv_build` but still has `[tool.hatch.*]` sections pointing at `src/api`.
+- [ ] **Declare direct dependencies**: `chatbot_ui` imports `requests` but only gets it transitively via `streamlit`; add it explicitly.
+
+### Docker & Compose
+- [ ] **Pin Qdrant image version** (`qdrant/qdrant:vX.Y.Z`) instead of implicit `latest`.
+- [ ] **Healthchecks + startup ordering**: Once `/health` / `/ready` exist (Section 2), add Compose `healthcheck`s and `depends_on: condition: service_healthy` (including `streamlit-app` → `api`).
+- [ ] **Split dev vs prod**: Move `uvicorn --reload` and source bind-mounts into a `docker-compose.override.yaml`; keep base images production-ready.
+- [ ] **Add `.dockerignore`**: Exclude `.env`, `.venv`, `data/`, `qdrant_data/`, `notebooks/` as insurance against leaking secrets or bloating images.
+
+### Tooling & Docs
+- [ ] **Commit linter/type-checker config**: Add ruff config and un-ignore `pyrefly.toml` (currently in `.gitignore`).
+- [ ] **Pre-commit + CI**: Run ruff, pyrefly, and pytest on every push.
+- [ ] **Enforce clean notebooks**: Install `nbstripout` as a git filter (`01-llm-apis.ipynb` still has a committed output cell).
+- [ ] **Docs**: Fill in the empty `README.md` files (root, `apps/api`, `apps/chatbot_ui`) and add a `.env.example` listing required keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `LANGSMITH_*`).
+
+---
+
+## 5. Async Migration Notes (`def` vs `async def`)
 
 ### Why `async def` with sync SDKs makes performance worse
 
