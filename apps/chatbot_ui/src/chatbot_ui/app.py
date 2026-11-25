@@ -59,24 +59,21 @@ with st.sidebar:
 
 
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "assistant", "content": "Hello! How can I assist you today?"}
-    ]
+    st.session_state.messages = []
 
+with st.chat_message("assistant"):
+    st.markdown("Hello! How can I assist you today?")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 if prompt := st.chat_input("Hello! How can I assist you today?"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     answer = ""
     with st.chat_message("assistant"):
-        # skip the canned greeting (index 0) and the current prompt (index -1)
-        history = st.session_state.messages[1:-1]
         ok, response_data = api_call(
             "post",
             f"{config.API_URL}/rag",
@@ -84,7 +81,7 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
                 "query": prompt,
                 "provider": st.session_state.provider,
                 "model_name": st.session_state.model_name,
-                "history": history,
+                "history": st.session_state.messages,
             },
         )
         if ok:
@@ -98,7 +95,9 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
                 or "Request failed"
             )
     if ok:
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-    else:
-        # drop the unanswered user turn so a retry doesn't send two user messages in a row
-        st.session_state.messages.pop()
+        st.session_state.messages.extend(
+            [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": answer},
+            ]
+        )

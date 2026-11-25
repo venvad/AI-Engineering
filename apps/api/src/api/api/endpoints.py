@@ -1,13 +1,10 @@
-from api.agents.retrieval_generation import rag_pipeline
-from api.api.models import RAGRequest, RAGResponse
-from fastapi import APIRouter, Request
-from fastapi.exceptions import HTTPException
-
 import logging
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+from fastapi import APIRouter, HTTPException, Request
+
+from api.agents.retrieval_generation import rag_pipeline
+from api.api.models import RAGRequest, RAGResponse
+
 logger = logging.getLogger(__name__)
 
 rag_router = APIRouter()
@@ -24,7 +21,7 @@ def chat(request: Request, payload: RAGRequest) -> RAGResponse:
         )
         return RAGResponse(answer=result.answer)
     except Exception as e:
-        logger.exception("Request failed: %s", request.method)
+        logger.exception("Request failed: %s %s", request.method, request.url.path)
         raise HTTPException(status_code=500, detail=f"Request failed: {e}") from e
 
 

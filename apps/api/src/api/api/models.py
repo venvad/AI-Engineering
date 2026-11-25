@@ -1,5 +1,8 @@
-from pydantic import BaseModel, Field
+from typing import Annotated, Literal
 
+from pydantic import BaseModel, Field, StringConstraints
+
+from api.agents.constants import DEFAULT_MODEL_NAME, DEFAULT_PROVIDER
 from api.core.types import Provider, Role
 
 
@@ -8,12 +11,19 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class HistoryMessage(ChatMessage):
+    role: Literal[Role.USER, Role.ASSISTANT]
+
+
 class RAGRequest(BaseModel):
-    query: str = Field(..., description="Query to be answered")
-    provider: Provider = Field(default=Provider.OPENAI, description="LLM provider")
-    model_name: str = Field(default="gpt-6-luna", description="Model name")
-    history: list[ChatMessage] = Field(
-        default_factory=list, description="Previous conversation turns"
+    query: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ] = Field(..., description="Query to be answered")
+    provider: Provider = Field(default=DEFAULT_PROVIDER, description="LLM provider")
+    model_name: str = Field(default=DEFAULT_MODEL_NAME, description="Model name")
+    history: list[HistoryMessage] = Field(
+        default_factory=list,
+        description="Previous conversation messages (most recent last)",
     )
 
 
@@ -39,13 +49,3 @@ class RetrievedItem(BaseModel):
     average_rating: float | None = Field(
         ..., description="Average rating of the product"
     )
-
-
-class ChatRequest(BaseModel):
-    provider: Provider
-    models_name: str
-    messages: list[ChatMessage]
-
-
-class ChatResponse(BaseModel):
-    message: str
