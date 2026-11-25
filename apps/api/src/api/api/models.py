@@ -1,6 +1,4 @@
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.agents.constants import DEFAULT_MODEL_NAME, DEFAULT_PROVIDER
 from api.core.types import Provider, Role
@@ -11,17 +9,20 @@ class ChatMessage(BaseModel):
     content: str
 
 
-class HistoryMessage(ChatMessage):
-    role: Literal[Role.USER, Role.ASSISTANT]
-
-
 class RAGRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     query: str = Field(min_length=1)
     provider: Provider = DEFAULT_PROVIDER
     model_name: str = DEFAULT_MODEL_NAME
-    history: list[HistoryMessage] = []
+    history: list[ChatMessage] = []
+
+    @field_validator("history")
+    @classmethod
+    def no_system_messages(cls, v: list[ChatMessage]) -> list[ChatMessage]:
+        if any(m.role == Role.SYSTEM for m in v):
+            raise ValueError("history cannot contain system messages")
+        return v
 
 
 class RAGResponse(BaseModel):
