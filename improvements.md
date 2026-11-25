@@ -45,7 +45,7 @@ Add a lightweight contextualization step before vector search whenever `history`
 - [ ] **Split routers by domain** (once >1 feature exists): Move routes into `apps/api/src/api/api/routes/` (`rag.py`, `health.py`, etc.) aggregated by `api_router`.
 
 ### Input Validation (`apps/api/src/api/api/models.py`)
-- [x] **Reject blank queries**: `RAGRequest` uses `ConfigDict(str_strip_whitespace=True)` + `min_length=1` on `query`; `HistoryMessage` only allows `user`/`assistant` roles, and `build_prompt` slices to the last `MAX_HISTORY_MESSAGES` (10).
+- [x] **Reject blank queries**: `RAGRequest` uses `ConfigDict(str_strip_whitespace=True)` + `min_length=1` on `query` and rejects `Role.SYSTEM` in `history`; `build_prompt` slices to the last `MAX_HISTORY_MESSAGES` (10).
 - [ ] **Optional bounded `top_k`**: Expose `top_k: int = Field(default=5, ge=1, le=50)` on `RAGRequest` if callers should control retrieval depth.
 - [x] **Remove unused schemas**: Removed legacy `ChatRequest` (with `models_name` typo) / `ChatResponse`.
 - [ ] **Validate `model_name` against `provider`**: Mismatched pairs (e.g. `Anthropic` + `gpt-6-luna`) currently pass validation and fail upstream as a `500`. Add a per-provider allow-list in the backend, validate it with a `model_validator`, and expose it via `GET /api/v1/models` so the Streamlit UI stops hardcoding model lists.
