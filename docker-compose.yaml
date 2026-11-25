@@ -21,6 +21,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./apps/api/src:/app/apps/api/src
+    depends_on:
+      - qdrant
 
   qdrant:
     image: qdrant/qdrant
