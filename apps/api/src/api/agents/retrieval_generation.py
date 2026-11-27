@@ -97,7 +97,7 @@ Rules:
 @traceable(name="build_prompt", run_type="prompt")
 def build_prompt(
     formatted_products: str,
-    question: str,
+    query: str,
     history: Sequence[ChatMessage] = (),
 ) -> list[ChatMessage]:
     # Anthropic requires conversations to start with a user turn (rejects leading assistant with 400)
@@ -106,7 +106,7 @@ def build_prompt(
 
     user_content = (
         f"<available_products>\n{formatted_products}\n</available_products>\n\n"
-        f"<user_question>\n{question.strip()}\n</user_question>"
+        f"<user_question>\n{query.strip()}\n</user_question>"
     )
     return [
         ChatMessage(role=Role.SYSTEM, content=SYSTEM_PROMPT),
@@ -126,20 +126,20 @@ def generate_answer(
 
 @traceable(name="rag_pipeline")
 def rag_pipeline(
-    question: str,
+    query: str,
     provider: Provider = DEFAULT_PROVIDER,
     model_name: str = DEFAULT_MODEL_NAME,
     top_k: int = DEFAULT_TOP_K,
     history: Sequence[ChatMessage] = (),
 ) -> RAGResult:
-    retrieved_items = retrieve_items(question, k=top_k)
+    retrieved_items = retrieve_items(query, k=top_k)
     formatted_context = format_context(retrieved_items)
-    prompt = build_prompt(formatted_context, question, history=history)
+    prompt = build_prompt(formatted_context, query, history=history)
     answer = generate_answer(prompt, provider=provider, model_name=model_name)
 
     return RAGResult(
         answer=answer,
-        query=question,
+        query=query,
         retrieved_context=[item.description for item in retrieved_items],
         retrieved_context_ids=[item.parent_asin for item in retrieved_items],
     )
