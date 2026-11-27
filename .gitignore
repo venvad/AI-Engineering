@@ -10,3 +10,5 @@ __pycache__/
 data/
 qdrant_data/
 pyrefly.toml
+code_review.md
+improvements.md

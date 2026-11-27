@@ -4,3 +4,7 @@ run-docker-compose:
 
 clean-notebook-outputs:
 	uv run jupyter nbconvert --clear-output --inplace notebooks/*/*.ipynb
+
+run-evals-retriever:
+	uv sync
+	QDRANT_URL=http://localhost:6333 PYTHONPATH=${PWD}/apps/api:${PWD}/apps/api/src:$$PYTHONPATH:${PWD} uv run --env-file .env python -m evals.eval_retriever
