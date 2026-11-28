@@ -11,7 +11,11 @@ from langsmith.wrappers import wrap_anthropic, wrap_gemini, wrap_openai
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from api.agents.constants import LLM_TIMEOUT_SECONDS, MAX_TOKENS
+from api.agents.constants import (
+    DEFAULT_REASONING_EFFORT,
+    LLM_TIMEOUT_SECONDS,
+    MAX_TOKENS,
+)
 from api.api.models import ChatMessage
 from api.core.config import config
 from api.core.types import Provider, Role
@@ -58,7 +62,7 @@ def _run_openai(model: str, messages: list[ChatMessage], max_tokens: int) -> str
             list[ChatCompletionMessageParam], [m.model_dump() for m in messages]
         ),
         max_completion_tokens=max_tokens,
-        reasoning_effort="low",
+        reasoning_effort=DEFAULT_REASONING_EFFORT,
     )
     return (resp.choices[0].message.content or "") if resp.choices else ""
 
