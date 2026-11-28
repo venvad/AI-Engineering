@@ -1,92 +1,94 @@
 import asyncio
 
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langsmith import Client
 from langsmith.evaluation import EvaluationResult
 from langsmith.schemas import Example, Run
-from ragas.dataset_schema import SingleTurnSample
-from ragas.embeddings import LangchainEmbeddingsWrapper
-from ragas.llms import LangchainLLMWrapper
-from ragas.metrics import (
-    Faithfulness,
-    IDBasedContextPrecision,
-    IDBasedContextRecall,
-    ResponseRelevancy,
-)
+from openai import AsyncOpenAI
+from ragas.embeddings import OpenAIEmbeddings
+from ragas.llms import llm_factory
+from ragas.metrics.collections import AnswerRelevancy, Faithfulness
 
 from api.agents.retrieval_generation import rag_pipeline
 
-EVAL_JUDGE_MODEL = "gpt-6-sol"
+EVAL_JUDGE_MODEL = "gpt-6-luna"
+EVAL_JUDGE_REASONING_EFFORT = "low"
 EVAL_EMBEDDING_MODEL = "text-embedding-3-small"
 
 ls_client = Client()
-ragas_llm = LangchainLLMWrapper(
-    ChatOpenAI(model=EVAL_JUDGE_MODEL), bypass_temperature=True
+async_openai_client = AsyncOpenAI()
+ragas_llm = llm_factory(
+    EVAL_JUDGE_MODEL,
+    client=async_openai_client,
+    max_tokens=4096,
+    reasoning_effort=EVAL_JUDGE_REASONING_EFFORT,
 )
-ragas_embeddings = LangchainEmbeddingsWrapper(
-    OpenAIEmbeddings(model=EVAL_EMBEDDING_MODEL)
+ragas_embeddings = OpenAIEmbeddings(
+    client=async_openai_client, model=EVAL_EMBEDDING_MODEL
 )
 
 
-async def ragas_context_precision_id_based(
-    run: Run, example: Example | None
-) -> EvaluationResult:
+def context_precision_id_based(run: Run, example: Example | None) -> EvaluationResult:
     assert (
         run.outputs is not None and example is not None and example.outputs is not None
     )
-    sample = SingleTurnSample(
-        retrieved_context_ids=run.outputs["retrieved_context_ids"],
-        reference_context_ids=example.outputs["reference_context_ids"],
-    )
-    scorer = IDBasedContextPrecision()
+    retrieved = set(map(str, run.outputs["retrieved_context_ids"]))
+    reference = set(map(str, example.outputs["reference_context_ids"]))
+
+    if not retrieved:
+        return EvaluationResult(
+            key="ragas_context_precision_id_based",
+            score=None,
+            comment="No retrieved context IDs",
+        )
     return EvaluationResult(
         key="ragas_context_precision_id_based",
-        score=await scorer.single_turn_ascore(sample),
+        score=len(retrieved & reference) / len(retrieved),
     )
 
 
-async def ragas_context_recall_id_based(
-    run: Run, example: Example | None
-) -> EvaluationResult:
+def context_recall_id_based(run: Run, example: Example | None) -> EvaluationResult:
     assert (
         run.outputs is not None and example is not None and example.outputs is not None
     )
-    sample = SingleTurnSample(
-        retrieved_context_ids=run.outputs["retrieved_context_ids"],
-        reference_context_ids=example.outputs["reference_context_ids"],
-    )
-    scorer = IDBasedContextRecall()
+    retrieved = set(map(str, run.outputs["retrieved_context_ids"]))
+    reference = set(map(str, example.outputs["reference_context_ids"]))
+
+    if not reference:
+        return EvaluationResult(
+            key="ragas_context_recall_id_based",
+            score=None,
+            comment="No reference context IDs",
+        )
     return EvaluationResult(
         key="ragas_context_recall_id_based",
-        score=await scorer.single_turn_ascore(sample),
+        score=len(retrieved & reference) / len(reference),
     )
 
 
 async def ragas_faithfulness(run: Run, example: Example | None) -> EvaluationResult:
     assert run.outputs is not None
-    sample = SingleTurnSample(
+    scorer = Faithfulness(llm=ragas_llm)
+    result = await scorer.ascore(
         user_input=run.outputs["query"],
         response=run.outputs["answer"],
         retrieved_contexts=run.outputs["retrieved_context"],
     )
-    scorer = Faithfulness(llm=ragas_llm)
     return EvaluationResult(
         key="ragas_faithfulness",
-        score=await scorer.single_turn_ascore(sample),
+        score=result.value,
     )
 
 
 async def ragas_relevancy(run: Run, example: Example | None) -> EvaluationResult:
     assert run.outputs is not None
-    sample = SingleTurnSample(
+    scorer = AnswerRelevancy(llm=ragas_llm, embeddings=ragas_embeddings)
+    result = await scorer.ascore(
         user_input=run.outputs["query"],
         response=run.outputs["answer"],
-        retrieved_contexts=run.outputs["retrieved_context"],
     )
-    scorer = ResponseRelevancy(llm=ragas_llm, embeddings=ragas_embeddings)
     return EvaluationResult(
         key="ragas_relevancy",
-        score=await scorer.single_turn_ascore(sample),
+        score=result.value,
     )
 
 
@@ -96,17 +98,21 @@ async def target(inputs: dict) -> dict:
 
 
 async def main() -> None:
-    await ls_client.aevaluate(
-        target,
-        data="rag-evaluation-dataset",
-        evaluators=[
-            ragas_context_precision_id_based,
-            ragas_context_recall_id_based,
-            ragas_faithfulness,
-            ragas_relevancy,
-        ],
-        experiment_prefix="retriever",
-    )
+    try:
+        await ls_client.aevaluate(
+            target,
+            data="rag-evaluation-dataset",
+            evaluators=[
+                context_precision_id_based,
+                context_recall_id_based,
+                ragas_faithfulness,
+                ragas_relevancy,
+            ],
+            experiment_prefix="retriever",
+            max_concurrency=5,
+        )
+    finally:
+        await async_openai_client.close()
 
 
 if __name__ == "__main__":
