@@ -46,7 +46,7 @@ def api_call(method: str, url: str, **kwargs: Any) -> tuple[bool, dict[str, Any]
 with st.sidebar:
     provider = st.selectbox("Provider", ["OpenAI", "Anthropic", "Google"])
     if provider == "OpenAI":
-        model_name = st.selectbox("Model", ["gpt-6-luna", "gpt-6-sol"])
+        model_name = st.selectbox("Model", ["gpt-6-sol", "gpt-6-luna"])
     elif provider == "Anthropic":
         model_name = st.selectbox("Model", ["claude-haiku-5-5", "claude-sonnet-5-5"])
     elif provider == "Google":

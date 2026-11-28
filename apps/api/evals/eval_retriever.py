@@ -1,6 +1,5 @@
 import asyncio
 
-from api.agents.retrieval_generation import rag_pipeline
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langsmith import Client
 from langsmith.evaluation import EvaluationResult
@@ -15,10 +14,17 @@ from ragas.metrics import (
     ResponseRelevancy,
 )
 
+from api.agents.retrieval_generation import rag_pipeline
+
+EVAL_JUDGE_MODEL = "gpt-6-sol"
+EVAL_EMBEDDING_MODEL = "text-embedding-3-small"
+
 ls_client = Client()
-ragas_llm = LangchainLLMWrapper(ChatOpenAI(model="gpt-6-sol"), bypass_temperature=True)
+ragas_llm = LangchainLLMWrapper(
+    ChatOpenAI(model=EVAL_JUDGE_MODEL), bypass_temperature=True
+)
 ragas_embeddings = LangchainEmbeddingsWrapper(
-    OpenAIEmbeddings(model="text-embedding-3-small")
+    OpenAIEmbeddings(model=EVAL_EMBEDDING_MODEL)
 )
 
 
@@ -26,9 +32,7 @@ async def ragas_context_precision_id_based(
     run: Run, example: Example | None
 ) -> EvaluationResult:
     assert (
-        run.outputs is not None
-        and example is not None
-        and example.outputs is not None
+        run.outputs is not None and example is not None and example.outputs is not None
     )
     sample = SingleTurnSample(
         retrieved_context_ids=run.outputs["retrieved_context_ids"],
@@ -45,9 +49,7 @@ async def ragas_context_recall_id_based(
     run: Run, example: Example | None
 ) -> EvaluationResult:
     assert (
-        run.outputs is not None
-        and example is not None
-        and example.outputs is not None
+        run.outputs is not None and example is not None and example.outputs is not None
     )
     sample = SingleTurnSample(
         retrieved_context_ids=run.outputs["retrieved_context_ids"],
@@ -89,7 +91,8 @@ async def ragas_relevancy(run: Run, example: Example | None) -> EvaluationResult
 
 
 async def target(inputs: dict) -> dict:
-    return await asyncio.to_thread(lambda: rag_pipeline(inputs["query"]).model_dump())
+    result = await asyncio.to_thread(rag_pipeline, inputs["query"])
+    return result.model_dump()
 
 
 async def main() -> None:
